@@ -2187,6 +2187,7 @@ _G.DoiteConditions_ProcWindowDurations = _G.DoiteConditions_ProcWindowDurations 
   ["Surprise Attack"] = 4.0,
   ["Riposte"] = 4.0,
   ["Arcane Surge"] = 4.0,
+  ["Lacerate"] = 4.0,
 }
 
 -- SpellName -> absolute endTime (GetTime() + duration)
@@ -2305,6 +2306,28 @@ end)
 local _daClassCL = CreateFrame("Frame", "DoiteClassCL")
 local _daClassCL2 = CreateFrame("Frame", "DoiteClassCL2")
 
+local function _HasTrackedProcSpell(spellName)
+  if not spellName or spellName == "" then
+    return false
+  end
+  local db = DoiteAurasDB and DoiteAurasDB.spells
+  if not db then
+    return false
+  end
+
+  local _, data
+  for _, data in pairs(db) do
+    if type(data) == "table" and data.type == "Ability" then
+      local nm = data.name or data.displayName
+      if nm == spellName then
+        return true
+      end
+    end
+  end
+
+  return false
+end
+
 do
   local _, cls = UnitClass("player")
   cls = cls and string.upper(cls) or ""
@@ -2315,6 +2338,10 @@ do
 	_daClassCL:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 
     _daClassCL:SetScript("OnEvent", function()
+      if not _HasTrackedProcSpell("Overpower") then
+        return
+      end
+
       local line = arg1
       if not line or line == "" then
         return
@@ -2346,6 +2373,10 @@ do
     _daClassCL2:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_HITS")
 
     _daClassCL2:SetScript("OnEvent", function()
+      if not _HasTrackedProcSpell("Revenge") then
+        return
+      end
+
       local line = arg1
       if not line or line == "" then
         return
@@ -2373,6 +2404,10 @@ do
     _daClassCL:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 
     _daClassCL:SetScript("OnEvent", function()
+      if not _HasTrackedProcSpell("Surprise Attack") then
+        return
+      end
+
       local line = arg1
       if not line or line == "" then
         return
@@ -2405,6 +2440,10 @@ do
     _daClassCL2:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_HITS")
 
     _daClassCL2:SetScript("OnEvent", function()
+      if not _HasTrackedProcSpell("Riposte") then
+        return
+      end
+
       local line = arg1
       if not line or line == "" then
         return
@@ -2424,6 +2463,10 @@ do
     _daClassCL:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
 
     _daClassCL:SetScript("OnEvent", function()
+      if not _HasTrackedProcSpell("Arcane Surge") then
+        return
+      end
+
       local line = arg1
       if not line or line == "" then
         return
@@ -2439,6 +2482,33 @@ do
         if dur then
           local now = _Now()
           _ProcWindowSet("Arcane Surge", now + dur)
+          dirty_ability = true
+        end
+      end
+    end)
+  elseif cls == "HUNTER" then
+    -- Lacerate: procs on any player crit, not target-bound.
+    _daClassCL:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
+    _daClassCL:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+
+    _daClassCL:SetScript("OnEvent", function()
+      if not _HasTrackedProcSpell("Lacerate") then
+        return
+      end
+
+      local line = arg1
+      if not line or line == "" then
+        return
+      end
+
+      -- White crit: "You crit [target] for #."
+      -- Ability crit: "Your [ability] crits [target] for #."
+      if str_find(line, "^You%s+crit%s+.+%s+for%s+")
+          or str_find(line, "^Your%s+.+%s+crits%s+.+%s+for%s+") then
+        local dur = _ProcWindowDuration("Lacerate")
+        if dur then
+          local now = _Now()
+          _ProcWindowSet("Lacerate", now + dur)
           dirty_ability = true
         end
       end
@@ -6532,6 +6602,7 @@ local function _Doite_UpdateOverlayForFrame(frame, key, dataTbl, slideActive)
       local spellName = _GetCanonicalSpellNameFromData(dataTbl)
       local remCD, durCD = _AbilityCooldownByName(spellName)
       local remShown, durShown = nil, nil
+      local remIsProc = false
 
       -- 1) Normal cooldown remaining text (ONLY when user enabled it)
       if ca.textTimeRemaining == true then
@@ -6541,8 +6612,9 @@ local function _Doite_UpdateOverlayForFrame(frame, key, dataTbl, slideActive)
         end
       end
 
-      -- 2) Proc-window remaining text (ONLY for mode == "usable")
-      if (not remShown) and spellName and (ca.mode == "usable") then
+      -- 2) Proc-window remaining text (for usable/notcd/nocdoncd)
+      if (not remShown) and spellName
+          and (ca.mode == "usable" or ca.mode == "notcd" or ca.mode == "nocdoncd") then
         local procDur = _ProcWindowDuration(spellName)
         if procDur then
           local realCd = false
@@ -6555,6 +6627,7 @@ local function _Doite_UpdateOverlayForFrame(frame, key, dataTbl, slideActive)
             if remProc and remProc > 0 then
               remShown = remProc
               durShown = procDur
+              remIsProc = true
             end
           end
         end
@@ -6564,6 +6637,9 @@ local function _Doite_UpdateOverlayForFrame(frame, key, dataTbl, slideActive)
         remText = _FmtRem(remShown)
         wantRem = (remText ~= nil)
         frame._daSortRem = remShown
+        frame._daRemIsProc = remIsProc and true or false
+      else
+        frame._daRemIsProc = false
       end
 
       ----------------------------------------------------------------
@@ -6689,7 +6765,15 @@ local function _Doite_UpdateOverlayForFrame(frame, key, dataTbl, slideActive)
     if remText ~= frame._daLastRemText then
       frame._daLastRemText = remText
       frame._daTextRem:SetText(remText)
-      frame._daTextRem:SetTextColor(1, 1, 1, 1)
+    end
+    local remIsProcNow = (frame._daRemIsProc == true)
+    if remIsProcNow ~= frame._daLastRemProcState then
+      frame._daLastRemProcState = remIsProcNow
+      if remIsProcNow then
+        frame._daTextRem:SetTextColor(0.2, 1, 0.2, 1)
+      else
+        frame._daTextRem:SetTextColor(1, 1, 1, 1)
+      end
     end
     frame._daTextRem:Show()
   end
