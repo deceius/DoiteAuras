@@ -12230,7 +12230,7 @@ function DoiteConditions_Show(key)
       end
 
       local d = EnsureDBEntry(currentKey)
-      local okRun, show, texture, hideBackground, remaining, stacks = pcall(fn, {})
+      local okRun, show, texture, hideBackground, remaining, stacks, glow, grey = pcall(fn, {})
       if not okRun then
         if condFrame and condFrame.cond_custom_function_status then
           condFrame.cond_custom_function_status:SetText("|cffff4040Error|r")

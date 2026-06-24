@@ -5159,6 +5159,7 @@ local function _EvaluateVfxConditions(data)
         if _AuraConditions_CheckEntry(entry) then
           if entry.glow then glowOut = true end
           if entry.grey then greyOut = true end
+          if entry.notGrey then greyOut = false end
           if entry.fade then
             fadeOut = true
             local entryFadeAlpha = _ClampFadeAlpha(entry.fadeAlpha)
@@ -7606,7 +7607,7 @@ local function _DoiteCustomEvaluateOne(key, data)
     data._daCustomRuntime = state
   end
 
-  local ok, show, texture, hideBackground, remaining, stacks = pcall(fn, state)
+  local ok, show, texture, hideBackground, remaining, stacks, glow, grey, fade = pcall(fn, state)
   if not ok then
     _DoiteCustomPrintOnce(data, key, "runtime error", show)
     data._daCustomShow = false
@@ -7614,6 +7615,9 @@ local function _DoiteCustomEvaluateOne(key, data)
     data._daCustomHideBG = false
     data._daCustomRemaining = nil
     data._daCustomStacks = nil
+    data._daCustomGlow = nil
+    data._daCustomGrey = nil
+    data._daCustomFade = nil
     DoiteConditions:ApplyVisuals(key, false, false, false, false, 0)
     return true
   end
@@ -7624,8 +7628,11 @@ local function _DoiteCustomEvaluateOne(key, data)
   data._daCustomHideBG = (hideBackground == true)
   data._daCustomRemaining = (type(remaining) == "number") and remaining or nil
   data._daCustomStacks = (type(stacks) == "number") and stacks or nil
+  data._daCustomGlow = (glow == true)
+  data._daCustomGrey = (grey == true)
+  data._daCustomFade = (type(fade) == "number") and fade or 0
 
-  DoiteConditions:ApplyVisuals(key, data._daCustomShow, false, false, false, 0)
+  DoiteConditions:ApplyVisuals(key, data._daCustomShow, data._daCustomGlow, data._daCustomGrey, data._daCustomFade > 0, data._daCustomFade)
   return true
 end
 
